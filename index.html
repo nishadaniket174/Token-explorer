@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Pipeline Explorer — The Visual Journey of an LLM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Three.js for liquid glass 3D stages -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Plotly.js for interactive 3D embeddings & latent manifold manifold visualizations -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Ambient background glow lights -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <!-- Main Container imitating the sleek Liquid Glass Dashboard Frame -->
+  <div class="app-viewport">
+
+    <!-- Top Navigation Bar -->
+    <header class="glass-navbar">
+      <div class="nav-left">
+        <div class="logo-orb">
+          <div class="orb-inner"></div>
+        </div>
+        <span class="brand-title">LLM Pipeline Explorer</span>
+      </div>
+
+      <nav class="nav-center-pill">
+        <button class="nav-tab active" data-target="stage-hero">Home</button>
+        <button class="nav-tab" data-target="stage-tokenizer">Tokenizer</button>
+        <button class="nav-tab" data-target="stage-embeddings">Embeddings 3D</button>
+        <button class="nav-tab" data-target="stage-attention">Self-Attention</button>
+        <button class="nav-tab" data-target="stage-decoder">Decoder</button>
+      </nav>
+
+      <div class="nav-right">
+        <button class="glass-icon-btn" title="Quick Search" id="quick-search-btn">
+          <i data-lucide="search"></i>
+        </button>
+        <button class="glass-pill-btn glow-accent" id="live-probe-btn">
+          <i data-lucide="sparkles"></i>
+          <span>Interactive Probe</span>
+        </button>
+        <div class="user-avatar" title="Pipeline Status: Online">
+          <span class="status-dot"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Hero / 3D Pipeline Visualizer Interactive Showcase -->
+    <section class="hero-section" id="stage-hero">
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span>EXPLORE • UNDERSTAND • BUILD</span>
+        </div>
+        <h1 class="hero-title">
+          The Visual<br>
+          <span class="text-gradient">Journey</span> of an LLM
+        </h1>
+        <p class="hero-desc">
+          An interactive, 3D explorer to demystify how Large Language Models work — from raw text to subword tokens, 3D high-dimensional embeddings, multi-head attention warping, and probabilistic next-token generation.
+        </p>
+
+        <div class="hero-actions">
+          <a href="#stage-tokenizer" class="btn btn-primary glass-glow">
+            <span>Start Exploring</span>
+            <i data-lucide="arrow-right"></i>
+          </a>
+          <button class="btn btn-secondary glass-btn" id="play-full-pipeline-btn">
+            <i data-lucide="play-circle"></i>
+            <span>Simulate Pipeline</span>
+          </button>
+        </div>
+
+        <div class="hero-metrics">
+          <div class="metric-item">
+            <span class="metric-val">100%</span>
+            <span class="metric-label">Client-Side WebGL</span>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <span class="metric-val">64-D</span>
+            <span class="metric-label">Embedding Space</span>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <span class="metric-val">4-Head</span>
+            <span class="metric-label">Attention Probe</span>
+          </div>
+          <div class="metric-sep"></div>
+          <div class="metric-item">
+            <span class="metric-val">&infin;</span>
+            <span class="metric-label">Ideas &amp; Vectors</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3D Liquid Glass Stage Container (Interactive Three.js Canvas) -->
+      <div class="pipeline-card-container">
+        <div class="pipeline-glass-window">
+          <div class="glass-window-header">
+            <div class="window-title">
+              <span class="cube-icon"><i data-lucide="box"></i></span>
+              <span class="title-text">Pipeline Visualization</span>
+              <span class="badge-live">Live</span>
+            </div>
+            <div class="window-controls">
+              <div class="toggle-group">
+                <button class="toggle-pill active" id="view-3d-btn">3D Glass</button>
+                <button class="toggle-pill" id="view-flow-btn">Flow Mode</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive 3D Three.js Canvas -->
+          <div class="canvas-wrapper" id="threejs-canvas-wrapper">
+            <div id="three-container"></div>
+            <!-- Interactive Floating Stage Cards Overlay -->
+            <div class="interactive-stage-indicators">
+              <div class="stage-step" data-step="0">
+                <div class="step-dot"></div>
+                <span>Input</span>
+              </div>
+              <div class="stage-step" data-step="1">
+                <div class="step-dot"></div>
+                <span>Tokens</span>
+              </div>
+              <div class="stage-step" data-step="2">
+                <div class="step-dot"></div>
+                <span>Embeddings</span>
+              </div>
+              <div class="stage-step" data-step="3">
+                <div class="step-dot"></div>
+                <span>Attention</span>
+              </div>
+              <div class="stage-step" data-step="4">
+                <div class="step-dot"></div>
+                <span>Output</span>
+              </div>
+            </div>
+            <div class="canvas-hint">
+              <i data-lucide="move-3d"></i> Click &amp; drag 3D glass stage blocks • Click any block to focus
+            </div>
+          </div>
+
+          <!-- Mini prompt input directly within the showcase -->
+          <div class="interactive-showcase-bar">
+            <input type="text" id="pipeline-quick-input" value="The cat sat on the mat." placeholder="Type a sentence to run through entire pipeline...">
+            <button id="run-pipeline-quick-btn" class="btn-micro-run">
+              <span>Trace Pipeline</span>
+              <i data-lucide="zap"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Navigation Feature Cards (Matches Screenshot Bottom) -->
+    <section class="feature-cards-row">
+      <div class="glass-feature-card" onclick="document.getElementById('stage-tokenizer').scrollIntoView({behavior:'smooth'})">
+        <div class="card-icon-box cyan-glow">
+          <i data-lucide="scissors"></i>
+        </div>
+        <div class="card-body">
+          <h3>Subword Tokenizer</h3>
+          <p>Inspect BPE vocabulary compression, token IDs, and subword splitting in real-time.</p>
+        </div>
+        <div class="card-arrow"><i data-lucide="arrow-up-right"></i></div>
+      </div>
+
+      <div class="glass-feature-card" onclick="document.getElementById('stage-embeddings').scrollIntoView({behavior:'smooth'})">
+        <div class="card-icon-box purple-glow">
+          <i data-lucide="boxes"></i>
+        </div>
+        <div class="card-body">
+          <h3>3D Embedding Space</h3>
+          <p>Interactive 3D PCA vector space with geometric manifold curvature and cosmic warping.</p>
+        </div>
+        <div class="card-arrow"><i data-lucide="arrow-up-right"></i></div>
+      </div>
+
+      <div class="glass-feature-card" onclick="document.getElementById('stage-attention').scrollIntoView({behavior:'smooth'})">
+        <div class="card-icon-box magenta-glow">
+          <i data-lucide="network"></i>
+        </div>
+        <div class="card-body">
+          <h3>Self-Attention Engine</h3>
+          <p>Trace Query, Key, Value matrix interactions and token dependency heatmaps.</p>
+        </div>
+        <div class="card-arrow"><i data-lucide="arrow-up-right"></i></div>
+      </div>
+
+      <div class="glass-feature-card quote-card">
+        <div class="quote-content">
+          <span class="quote-text">"Technology should feel magical."</span>
+          <span class="quote-author">— Exploring the latent mind of AI</span>
+        </div>
+        <div class="sparkle-deco">✦</div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 1: TOKENIZER PIPELINE & BPE LAB    -->
+    <!-- ========================================== -->
+    <section class="pipeline-section glass-panel" id="stage-tokenizer">
+      <div class="section-header">
+        <div class="stage-tag"><span class="pill-number">01</span> TOKENIZER &amp; VOCABULARY</div>
+        <h2>From Raw Characters to Token IDs</h2>
+        <p class="section-subtitle">LLMs do not read words or letters; they process discrete token integers through learned subword vocabularies.</p>
+      </div>
+
+      <div class="grid-two-col">
+        <!-- Left: Vocabulary Builder -->
+        <div class="glass-card card-inner">
+          <div class="card-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="book-open"></i>
+              <span>Corpus Vocabulary Learner</span>
+            </div>
+            <button class="btn-ghost-sm" id="reset-corpus-btn">Reset Sample</button>
+          </div>
+
+          <label class="field-label" for="corpus">Sentences to learn subword patterns from:</label>
+          <textarea id="corpus" rows="6" class="glass-textarea">The cat sat on the mat.
+The dog sat on the rug.
+The cat saw the dog!
+A dog and a cat can be friends.
+Do you like the cat?
+I don't like the rain, but I like the sun.</textarea>
+
+          <div class="action-row">
+            <button id="build-vocab-btn" class="btn btn-action glass-glow">
+              <i data-lucide="cpu"></i>
+              <span>Build &amp; Compress Vocabulary</span>
+            </button>
+          </div>
+
+          <!-- Vocabulary size slider -->
+          <div id="vocab-slider-box" class="slider-container" style="display:none;">
+            <div class="slider-header">
+              <label for="vocab-slider">Vocabulary Capacity (Top Words Kept):</label>
+              <span id="vocab-slider-value" class="badge-value">25</span>
+            </div>
+            <input type="range" id="vocab-slider" min="1" class="glass-slider">
+            <p class="note-box">
+              <i data-lucide="info"></i>
+              Drag left to simulate a smaller vocabulary. Words dropped from the vocabulary get broken down into subword pieces (e.g. <code>dogs</code> &rarr; <code>dog</code> + <code>##s</code>).
+            </p>
+          </div>
+
+          <div id="vocab-output" class="output-container"></div>
+        </div>
+
+        <!-- Right: Real-time Sentence Tokenizer -->
+        <div class="glass-card card-inner">
+          <div class="card-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="split"></i>
+              <span>Sentence Tokenizer &amp; ID Inspection</span>
+            </div>
+          </div>
+
+          <label class="field-label" for="encode-input">Sentence to encode:</label>
+          <div class="input-with-button">
+            <textarea id="encode-input" rows="2" class="glass-textarea">The dogs liked the sunny zebra.</textarea>
+            <button id="tokenize-btn" class="btn btn-action glass-glow">
+              <i data-lucide="binary"></i>
+              <span>Tokenize</span>
+            </button>
+          </div>
+
+          <div class="presets-row">
+            <span class="preset-label">Try quick samples:</span>
+            <button class="preset-chip" data-text="The dogs liked the sunny zebra.">Dogs &amp; Zebra</button>
+            <button class="preset-chip" data-text="A mysterious quantum cat appeared.">Quantum Cat</button>
+            <button class="preset-chip" data-text="Programming artificial intelligence in Python!">AI in Python</button>
+          </div>
+
+          <div id="token-output" class="output-container"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 2: 3D EMBEDDINGS & MANIFOLD SPACE  -->
+    <!-- ========================================== -->
+    <section class="pipeline-section glass-panel" id="stage-embeddings">
+      <div class="section-header">
+        <div class="stage-tag"><span class="pill-number">02</span> VECTOR EMBEDDINGS &amp; 3D MANIFOLD</div>
+        <h2>Geometry of Meaning in 3D Space</h2>
+        <p class="section-subtitle">
+          Text is mapped into dense 64-dimensional vectors, reduced via PCA power-iteration to 3D. Inspect semantic clustering, vector distances, and toggle 3D manifold bending.
+        </p>
+      </div>
+
+      <div class="grid-sidebar-layout">
+        <!-- Left: Input sentences & Controls -->
+        <div class="glass-card card-inner sidebar-controls">
+          <div class="card-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="layers"></i>
+              <span>Corpus of Sentences</span>
+            </div>
+            <button class="btn-ghost-sm" id="reset-embeddings-corpus-btn">Reset</button>
+          </div>
+
+          <label class="field-label" for="sentences">Sentences (one per line):</label>
+          <textarea id="sentences" rows="9" class="glass-textarea">The cat sat on the mat.
+A kitten rested on the rug.
+The bat sat on the mat.
+I love programming in Python.
+Coding in Python is my passion.
+Pythons are large snakes.
+The stock market crashed today.
+Share prices fell sharply.</textarea>
+
+          <div class="action-column">
+            <button id="embed-btn" class="btn btn-action glass-glow w-100">
+              <i data-lucide="orbit"></i>
+              <span>Compute &amp; Plot 3D Vectors</span>
+            </button>
+
+            <!-- 3D Manifold Bending & Projection Controls -->
+            <div class="control-box">
+              <div class="control-header">
+                <span class="control-title"><i data-lucide="waves"></i> 3D Manifold Warping</span>
+                <span id="bend-factor-label" class="badge-value">0.00</span>
+              </div>
+              <input type="range" id="bend-slider" min="0" max="1" step="0.05" value="0" class="glass-slider">
+              <div class="radio-toggle-group">
+                <button class="manifold-btn active" data-manifold="flat">Flat Euclidean</button>
+                <button class="manifold-btn" data-manifold="curved">Hyperbolic Surface</button>
+                <button class="manifold-btn" data-manifold="sphere">Hypersphere</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="embed-status" class="status-alert"></div>
+
+          <!-- Add custom sentence -->
+          <div class="custom-probe-box">
+            <h4><i data-lucide="crosshair"></i> Inject Custom Sentence Probe</h4>
+            <div class="input-with-button">
+              <input type="text" id="new-word" class="glass-input" placeholder="e.g. puppy, or: AI writes code.">
+              <button id="add-word-btn" class="btn-icon-submit" title="Embed &amp; Add">
+                <i data-lucide="plus"></i>
+              </button>
+            </div>
+            <div id="new-word-output"></div>
+          </div>
+        </div>
+
+        <!-- Right: 3D Visualization Canvas & Pairwise Distances -->
+        <div class="glass-card card-inner plot-container-card">
+          <div class="card-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="scatter-chart"></i>
+              <span>Interactive 3D Semantic Scatter &amp; Latent Clusters</span>
+            </div>
+            <div class="plot-tags">
+              <span class="legend-dot normal"></span> Standard
+              <span class="legend-dot user"></span> Injected Probe
+            </div>
+          </div>
+
+          <div id="plot" class="plotly-stage"></div>
+
+          <div id="pairs-output" class="similarity-table-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 3: TRANSFORMER SELF-ATTENTION LAB  -->
+    <!-- ========================================== -->
+    <section class="pipeline-section glass-panel" id="stage-attention">
+      <div class="section-header">
+        <div class="stage-tag"><span class="pill-number">03</span> ATTENTION MECHANISM</div>
+        <h2>Multi-Head Self-Attention Heatmap</h2>
+        <p class="section-subtitle">
+          Observe how each token computes Queries (\(Q\)), Keys (\(K\)), and Values (\(V\)) to weigh context and resolve ambiguities like "bank" (river vs finance) or pronoun references.
+        </p>
+      </div>
+
+      <div class="glass-card card-inner">
+        <div class="attention-toolbar">
+          <div class="input-attention-group">
+            <label for="attention-sentence-input">Sentence to inspect:</label>
+            <input type="text" id="attention-sentence-input" class="glass-input" value="The animal didn't cross the street because it was too tired.">
+            <button id="compute-attention-btn" class="btn btn-action glass-glow">
+              <i data-lucide="refresh-cw"></i>
+              <span>Compute Attention</span>
+            </button>
+          </div>
+
+          <div class="head-selector-group">
+            <span class="label-text">Select Attention Head:</span>
+            <div class="head-pills">
+              <button class="head-pill active" data-head="0">Head 1: Syntactic</button>
+              <button class="head-pill" data-head="1">Head 2: Coreference</button>
+              <button class="head-pill" data-head="2">Head 3: Positional</button>
+              <button class="head-pill" data-head="3">Head 4: Semantic Context</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="attention-matrix-layout">
+          <!-- Interactive Matrix Heatmap -->
+          <div class="matrix-column">
+            <h4>Attention Weight Matrix \(A = \text{softmax}(QK^T / \sqrt{d})\)</h4>
+            <div id="attention-heatmap-container" class="heatmap-wrapper"></div>
+          </div>
+
+          <!-- Dependency Flow & Inspection Details -->
+          <div class="attention-details-column">
+            <h4>Token Dependency Flow</h4>
+            <div id="token-dependency-visualizer" class="token-links-board"></div>
+            <div id="attention-head-explanation" class="info-card">
+              <h5><i data-lucide="info"></i> About this Head</h5>
+              <p id="head-desc-text">
+                <strong>Coreference Resolution:</strong> Notice how the pronoun <em>"it"</em> distributes strong attention weights back to <em>"animal"</em> rather than <em>"street"</em> based on the predicate <em>"tired"</em>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 4: DECODER & NEXT-TOKEN GENERATOR   -->
+    <!-- ========================================== -->
+    <section class="pipeline-section glass-panel" id="stage-decoder">
+      <div class="section-header">
+        <div class="stage-tag"><span class="pill-number">04</span> DECODER &amp; LOGITS</div>
+        <h2>Autoregressive Generation &amp; Sampling</h2>
+        <p class="section-subtitle">
+          The transformer outputs raw logits over the entire vocabulary. Temperature and Top-P filtering shape probability distributions into creative or deterministic text.
+        </p>
+      </div>
+
+      <div class="grid-two-col">
+        <!-- Left: Generation Controls & Live Output -->
+        <div class="glass-card card-inner">
+          <div class="card-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="message-square"></i>
+              <span>Prompt &amp; Autoregressive Step</span>
+            </div>
+          </div>
+
+          <label class="field-label" for="prompt-input">Input Prompt:</label>
+          <input type="text" id="prompt-input" class="glass-input" value="The quick brown fox">
+
+          <div class="sampling-controls">
+            <div class="slider-row">
+              <div class="slider-info">
+                <span>Temperature:</span>
+                <span id="temp-val" class="badge-value">0.7</span>
+              </div>
+              <input type="range" id="temp-slider" min="0.1" max="1.5" step="0.1" value="0.7" class="glass-slider">
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-info">
+                <span>Top-K Candidate Pool:</span>
+                <span id="topk-val" class="badge-value">5</span>
+              </div>
+              <input type="range" id="topk-slider" min="1" max="8" step="1" value="5" class="glass-slider">
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button id="step-generate-btn" class="btn btn-action glass-glow">
+              <i data-lucide="play"></i>
+              <span>Generate Next Token</span>
+            </button>
+            <button id="auto-generate-btn" class="btn btn-secondary glass-btn">
+              <i data-lucide="fast-forward"></i>
+              <span>Generate 5 Tokens</span>
+            </button>
+            <button id="reset-prompt-btn" class="btn-ghost-sm">Reset</button>
+          </div>
+
+          <div class="generation-display-box">
+            <span class="label-tiny">Generated Stream:</span>
+            <div id="generated-stream" class="stream-text">The quick brown fox</div>
+          </div>
+        </div>
+
+        <!-- Right: Probability Distribution Bars -->
+        <div class="glass-card card-inner">
+          <div class="card-title-bar">
+            <div class="title-with-icon">
+              <i data-lucide="bar-chart-2"></i>
+              <span>Softmax Probability Distribution \(P(w_{t+1})\)</span>
+            </div>
+          </div>
+
+          <p class="note-box">
+            <i data-lucide="activity"></i> Higher temperature flattens logits (more serendipity / hallucinations); lower temperature sharpens the peak onto the highest scoring token.
+          </p>
+
+          <div id="probabilities-bars" class="prob-bars-list">
+            <!-- Dynamically populated candidate bars -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-left">
+        <div class="logo-orb-small"></div>
+        <span>LLM Pipeline Explorer • Built with WebGL, Plotly &amp; Liquid Glass UI</span>
+      </div>
+      <div class="footer-right">
+        <span>From characters to vectors to generative thought</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

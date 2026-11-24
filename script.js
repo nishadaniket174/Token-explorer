@@ -74,16 +74,17 @@ function initThreePipeline() {
   fillPinkLight.position.set(6, -2, 3);
   scene.add(fillPinkLight);
 
-  // Create 5 Glass Cards representing the 5 Pipeline Stages
+  // Create 6 Glass Cards representing the 6 Pipeline Stages
   const stageData = [
     { name: "Input", color: 0x38bdf8, subtext: "Raw Prompt" },
     { name: "Tokenization", color: 0x0ea5e9, subtext: "Subwords & IDs" },
     { name: "Embedding", color: 0x8b5cf6, subtext: "64-D Vectors" },
     { name: "Transformer", color: 0xd946ef, subtext: "Multi-Head Attn" },
-    { name: "Output", color: 0xf59e0b, subtext: "Logits & Next Token" }
+    { name: "Output", color: 0xf59e0b, subtext: "Logits & Next Token" },
+    { name: "Perplexity", color: 0x10b981, subtext: "Uncertainty & PPL" }
   ];
 
-  const spacing = 2.4;
+  const spacing = 2.1;
   const startX = -((stageData.length - 1) * spacing) / 2;
 
   stageCards = [];
@@ -291,7 +292,7 @@ function selectStage(index) {
   }
 
   // Scroll smoothly to section if applicable
-  const sectionIds = ["stage-hero", "stage-tokenizer", "stage-embeddings", "stage-attention", "stage-decoder"];
+  const sectionIds = ["stage-hero", "stage-tokenizer", "stage-embeddings", "stage-attention", "stage-decoder", "stage-perplexity"];
   const targetId = sectionIds[index];
   const el = document.getElementById(targetId);
   if (el) el.scrollIntoView({ behavior: "smooth" });
@@ -1019,7 +1020,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const interval = setInterval(() => {
       selectStage(curr);
       curr++;
-      if (curr >= 5) clearInterval(interval);
+      if (curr >= 6) clearInterval(interval);
     }, 1200);
   });
 
@@ -1108,4 +1109,591 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("generated-stream").textContent = p;
     renderProbabilities();
   });
+
+  // Initialize Section 5: Perplexity Explorer
+  initPerplexityExplorer();
+
+  // Robust KaTeX math renderer helper
+  function triggerMathRender() {
+    if (window.renderMathInElement) {
+      try {
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "\\(", right: "\\)", display: false }
+          ],
+          throwOnError: false
+        });
+      } catch (err) {
+        console.warn("KaTeX rendering note:", err);
+      }
+    } else {
+      // Show clean HTML fallbacks if KaTeX fails to load from CDN
+      document.querySelectorAll(".math-fallback").forEach(el => el.style.display = "inline");
+      document.querySelectorAll(".math-expr").forEach(el => el.style.display = "none");
+    }
+  }
+
+  triggerMathRender();
+  // Ensure math triggers once window resources and fonts fully settle
+  window.addEventListener("load", triggerMathRender);
+  setTimeout(triggerMathRender, 300);
 });
+
+// =====================================================================
+// PART 5: PERPLEXITY EXPLORER (REAL MODEL & SIMULATION SANDBOX)
+// =====================================================================
+
+const PPL_MODEL_ID = "Xenova/distilgpt2";
+const GPT2_START_TOKEN_ID = 50256; // GPT-2 <|endoftext|> marker for causal beginning-of-sequence
+
+let pplTokenizer = null;
+let pplModel = null;
+let isModelLoading = false;
+
+// Numeric formatter
+function fmtNum(x) {
+  if (x === 0) return "0";
+  if (isNaN(x)) return "--";
+  if (x >= 0.001 && x < 1e5) return Number(x.toPrecision(4)).toString();
+  return x.toExponential(2);
+}
+
+function sanitizeTokenView(t) {
+  return t.replace(/ /g, "␣").replace(/\n/g, "↵").replace(/\t/g, "⇥");
+}
+
+// Log-softmax helper row-by-row for numerical stability
+function logSoftmaxFromData(data, offset, V) {
+  let max = -Infinity;
+  for (let j = 0; j < V; j++) {
+    const val = data[offset + j];
+    if (val > max) max = val;
+  }
+  let sum = 0;
+  for (let j = 0; j < V; j++) {
+    sum += Math.exp(data[offset + j] - max);
+  }
+  const logZ = max + Math.log(sum);
+  return (id) => data[offset + id] - logZ;
+}
+
+// Asynchronous on-demand loader for DistilGPT-2 via Transformers.js
+async function loadDistilGpt2() {
+  if (pplModel && pplTokenizer) return { tokenizer: pplTokenizer, model: pplModel };
+  if (isModelLoading) {
+    while (isModelLoading) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+    return { tokenizer: pplTokenizer, model: pplModel };
+  }
+
+  isModelLoading = true;
+  const statusEl = document.getElementById("ppl-status");
+  const trackEl = document.getElementById("ppl-progress-track");
+  const fillEl = document.getElementById("ppl-progress-fill");
+  const badgeDot = document.querySelector("#ppl-model-badge .status-indicator-dot");
+  const badgeText = document.getElementById("ppl-model-status-text");
+
+  if (badgeDot) {
+    badgeDot.className = "status-indicator-dot loading";
+  }
+  if (badgeText) badgeText.textContent = "Downloading DistilGPT-2 (~80MB)...";
+  if (trackEl) trackEl.style.display = "block";
+  if (statusEl) statusEl.textContent = "Connecting to HuggingFace Hub for client-side ONNX weights...";
+
+  try {
+    // Dynamic import to avoid blocking initial page load
+    const { AutoTokenizer, AutoModelForCausalLM } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3");
+
+    pplTokenizer = await AutoTokenizer.from_pretrained(PPL_MODEL_ID);
+
+    pplModel = await AutoModelForCausalLM.from_pretrained(PPL_MODEL_ID, {
+      dtype: "q8",
+      progress_callback: (e) => {
+        if (e.status === "progress" && typeof e.progress === "number") {
+          const pct = Math.round(e.progress);
+          if (fillEl) fillEl.style.width = `${pct}%`;
+          if (statusEl) statusEl.textContent = `Downloading ${e.file || 'model'}… ${pct}% (cached in browser IndexedDB)`;
+          if (badgeText) badgeText.textContent = `Downloading model… ${pct}%`;
+        }
+      }
+    });
+
+    if (badgeDot) {
+      badgeDot.className = "status-indicator-dot ready";
+    }
+    if (badgeText) badgeText.textContent = "DistilGPT-2 Ready (ONNX Quantized)";
+    if (statusEl) statusEl.textContent = "Model loaded and verified ✓ Ready for inference.";
+    if (trackEl) trackEl.style.display = "none";
+    isModelLoading = false;
+    return { tokenizer: pplTokenizer, model: pplModel };
+  } catch (err) {
+    isModelLoading = false;
+    if (badgeDot) badgeDot.className = "status-indicator-dot error";
+    if (badgeText) badgeText.textContent = "Model Load Failed";
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="color:#f87171;">Error loading DistilGPT-2: ${escapeHtml(err.message || String(err))}.</span> You can still use the <strong>Interactive Probability Simulator</strong> below without any model!`;
+    }
+    throw err;
+  }
+}
+
+// Calculate perplexity using causal language model
+async function runRealModelPerplexity() {
+  const inputEl = document.getElementById("ppl-sentence-input");
+  const text = (inputEl ? inputEl.value : "").trim();
+  const runBtn = document.getElementById("ppl-calc-btn");
+  const statusEl = document.getElementById("ppl-status");
+  const resultsArea = document.getElementById("ppl-real-results");
+
+  if (!text) {
+    if (statusEl) statusEl.textContent = "Please enter at least one word to evaluate.";
+    return;
+  }
+
+  if (runBtn) runBtn.disabled = true;
+
+  try {
+    const { tokenizer, model } = await loadDistilGpt2();
+    if (statusEl) statusEl.textContent = "Tokenizing and performing causal forward pass…";
+
+    const { Tensor } = await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3");
+
+    // Prepend START_TOKEN_ID (<|endoftext|>) so token 0 also has a preceding context
+    const rawTokens = tokenizer.encode(text);
+    const ids = [GPT2_START_TOKEN_ID, ...rawTokens];
+    const n = ids.length;
+
+    const input_ids = new Tensor("int64", BigInt64Array.from(ids.map(BigInt)), [1, n]);
+    const attention_mask = new Tensor("int64", new BigInt64Array(n).fill(1n), [1, n]);
+
+    // Forward pass
+    const { logits } = await model({ input_ids, attention_mask });
+    const V = logits.dims[2];
+    const data = logits.data;
+
+    // Collect P(token i | token 0..i-1)
+    const evaluatedRows = [];
+    let sumNegativeLogLikelihood = 0;
+
+    for (let i = 1; i < n; i++) {
+      // The logits predicting token i are located at index (i - 1) * V
+      const logPFunc = logSoftmaxRow(data, (i - 1) * V, V);
+      const targetTokenId = ids[i];
+      const logProb = logPFunc(targetTokenId);
+      const prob = Math.exp(logProb);
+      const tokenStr = tokenizer.decode([targetTokenId]);
+      const nll = -logProb; // -ln(P)
+
+      sumNegativeLogLikelihood += nll;
+
+      evaluatedRows.push({
+        index: i,
+        tokenId: targetTokenId,
+        token: tokenStr,
+        prob: prob,
+        nll: nll,
+        surprise: 1 / Math.max(prob, 1e-12)
+      });
+    }
+
+    const N = evaluatedRows.length;
+    const avgNLL = sumNegativeLogLikelihood / N;
+    const perplexity = Math.exp(avgNLL);
+    const geomMeanP = Math.exp(-avgNLL); // 1 / PPL
+
+    // Render Metrics
+    const pplValEl = document.getElementById("ppl-metric-val");
+    const pplInterpEl = document.getElementById("ppl-metric-interpretation");
+    const countEl = document.getElementById("ppl-token-count");
+    const lossEl = document.getElementById("ppl-avg-loss");
+    const geomEl = document.getElementById("ppl-geom-p");
+
+    if (pplValEl) pplValEl.textContent = fmtNum(perplexity);
+    if (countEl) countEl.textContent = N;
+    if (lossEl) lossEl.textContent = avgNLL.toFixed(3);
+    if (geomEl) geomEl.textContent = (geomMeanP * 100).toFixed(2) + "%";
+
+    if (pplInterpEl) {
+      if (perplexity < 15) {
+        pplInterpEl.textContent = "Very Natural & Expected Sequence";
+        pplInterpEl.style.color = "var(--emerald-neon)";
+      } else if (perplexity < 60) {
+        pplInterpEl.textContent = "Moderate Typical English Uncertainty";
+        pplInterpEl.style.color = "var(--cyan-accent)";
+      } else if (perplexity < 200) {
+        pplInterpEl.textContent = "Uncommon phrasing or atypical syntax";
+        pplInterpEl.style.color = "var(--amber-neon)";
+      } else {
+        pplInterpEl.textContent = "High Surprise / Very unusual sequence";
+        pplInterpEl.style.color = "var(--magenta-neon)";
+      }
+    }
+
+    // Render Token Interactive Chips
+    const chipsContainer = document.getElementById("ppl-token-chips");
+    if (chipsContainer) {
+      chipsContainer.innerHTML = evaluatedRows.map(r => {
+        // Color hue based on confidence: high prob -> cyan/green, low prob -> pink/red
+        const hue = Math.min(160, Math.max(0, r.prob * 180));
+        return `
+          <div class="ppl-token-pill" data-idx="${r.index}" title="Token '${escapeHtml(r.token)}' | P: ${(r.prob * 100).toFixed(2)}% | Loss: ${r.nll.toFixed(2)}">
+            <span class="pill-tok-text">${escapeHtml(sanitizeTokenView(r.token))}</span>
+            <span class="pill-tok-p" style="color: hsl(${hue}, 80%, 65%);">${(r.prob * 100).toFixed(1)}%</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Render Table
+    const tbody = document.getElementById("ppl-tokens-tbody");
+    if (tbody) {
+      tbody.innerHTML = evaluatedRows.map(r => {
+        const pct = (r.prob * 100).toFixed(2);
+        const barColor = r.prob > 0.3 ? "linear-gradient(to right, #38bdf8, #10b981)" :
+                         r.prob > 0.05 ? "linear-gradient(to right, #38bdf8, #f59e0b)" :
+                         "linear-gradient(to right, #ec4899, #ef4444)";
+        return `
+          <tr>
+            <td>${r.index}</td>
+            <td><span class="tok-badge">${escapeHtml(sanitizeTokenView(r.token))}</span></td>
+            <td><code>${r.tokenId}</code></td>
+            <td><strong>${fmtNum(r.prob)}</strong> <span style="font-size:0.75rem; color:var(--text-muted);">(${pct}%)</span></td>
+            <td>${fmtNum(r.surprise)}</td>
+            <td>${r.nll.toFixed(3)}</td>
+            <td>
+              <div class="mini-meter-track">
+                <div class="mini-meter-fill" style="width:${Math.min(100, Math.max(2, r.prob * 100))}%; background:${barColor};"></div>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    // Render Math Steps
+    const mathBox = document.getElementById("ppl-math-breakdown");
+    if (mathBox) {
+      const shownFactors = evaluatedRows.slice(0, 5).map(r => fmtNum(r.surprise)).join(" \\times ") +
+                           (N > 5 ? ` \\times \\dots \\text{ (${N - 5} more)}` : "");
+      mathBox.innerHTML = `
+        <div class="math-header">
+          <i data-lucide="sigma"></i>
+          <span>Step-by-Step Mathematical Derivation</span>
+        </div>
+
+        <div class="math-step-row">
+          <span class="math-step-tag">Step 1</span>
+          <div class="math-step-content">
+            <strong>Surprise Product</strong> \\(\\prod_{i=1}^{N} \\frac{1}{P_i} = \\)
+            \\(${shownFactors}\\) = <span class="calc-highlight">${fmtNum(Math.exp(sumNegativeLogLikelihood))}</span>
+          </div>
+        </div>
+
+        <div class="math-step-row">
+          <span class="math-step-tag">Step 2</span>
+          <div class="math-step-content">
+            <strong>Token Count</strong> \\(N = \\) <span class="calc-highlight">${N}</span> causal tokens evaluated.
+          </div>
+        </div>
+
+        <div class="math-step-row">
+          <span class="math-step-tag">Step 3</span>
+          <div class="math-step-content">
+            <strong>Geometric Mean / Perplexity</strong>
+            \\(\\text{PPL} = \\left(\\prod_{i=1}^N \\frac{1}{P_i}\\right)^{1/N} = \\exp\\left(\\frac{1}{N} \\sum_{i=1}^N -\\ln P_i\\right) = \\exp\\left(${avgNLL.toFixed(3)}\\right) = \\)
+            <span class="calc-result">${fmtNum(perplexity)}</span>
+          </div>
+        </div>
+
+        <div class="math-note-footer">
+          <i data-lucide="shield-check" style="color:var(--emerald-neon);"></i>
+          <span><strong>Numerical Stability:</strong> Evaluated in log-space to guarantee zero floating-point underflow on long sentences.</span>
+        </div>
+      `;
+      if (window.lucide) lucide.createIcons({ root: mathBox });
+      if (window.renderMathInElement) {
+        renderMathInElement(mathBox, {
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "\\(", right: "\\)", display: false }
+          ],
+          throwOnError: false
+        });
+      }
+    }
+
+    // Top 8 Next-Token Candidates after the entire sentence
+    const lastLogPFunc = logSoftmaxRow(data, (n - 1) * V, V);
+    const nextProbs = [];
+    for (let j = 0; j < V; j++) {
+      nextProbs.push([j, Math.exp(lastLogPFunc(j))]);
+    }
+    nextProbs.sort((a, b) => b[1] - a[1]);
+    const top8 = nextProbs.slice(0, 8);
+    const maxP = top8[0][1] || 1;
+
+    const nextListEl = document.getElementById("ppl-next-tokens-list");
+    if (nextListEl) {
+      nextListEl.innerHTML = top8.map(([id, p], rank) => {
+        const word = tokenizer.decode([id]);
+        const pct = (p * 100).toFixed(1);
+        const relWidth = ((p / maxP) * 100).toFixed(1);
+        return `
+          <div class="next-token-item ${rank === 0 ? 'top-rank' : ''}">
+            <span class="rank-pill">#${rank + 1}</span>
+            <span class="next-tok-label">${escapeHtml(sanitizeTokenView(word))}</span>
+            <div class="next-bar-track">
+              <div class="next-bar-fill" style="width:${relWidth}%;"></div>
+            </div>
+            <span class="next-pct-val">${pct}%</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    if (resultsArea) resultsArea.style.display = "block";
+    if (statusEl) statusEl.textContent = `Completed evaluation for "${text}" ✓`;
+  } catch (err) {
+    console.error("Perplexity calculation error:", err);
+  } finally {
+    if (runBtn) runBtn.disabled = false;
+  }
+}
+
+// LogSoftmax row helper with safety
+function logSoftmaxRow(data, offset, V) {
+  let max = -Infinity;
+  for (let j = 0; j < V; j++) {
+    const v = data[offset + j];
+    if (v > max) max = v;
+  }
+  let sum = 0;
+  for (let j = 0; j < V; j++) {
+    sum += Math.exp(data[offset + j] - max);
+  }
+  const logZ = max + Math.log(sum);
+  return (id) => data[offset + id] - logZ;
+}
+
+// =====================================================================
+// SIMULATED EXPERIMENT LOGIC
+// =====================================================================
+
+function addSimTokenRow(token = "", p = 0.5) {
+  const container = document.getElementById("sim-rows-container");
+  if (!container) return;
+
+  const row = document.createElement("div");
+  row.className = "sim-row-item";
+  row.innerHTML = `
+    <input type="text" class="sim-tok-input" value="${escapeHtml(token)}" placeholder="token text">
+    <input type="range" class="glass-slider sim-prob-slider" min="0.001" max="1" step="0.005" value="${p}">
+    <input type="number" class="sim-prob-input" min="0.0001" max="1" step="0.01" value="${p}">
+    <button class="sim-remove-btn" title="Remove token">✕</button>
+  `;
+
+  const slider = row.querySelector(".sim-prob-slider");
+  const numInput = row.querySelector(".sim-prob-input");
+  const textInput = row.querySelector(".sim-tok-input");
+  const removeBtn = row.querySelector(".sim-remove-btn");
+
+  slider.addEventListener("input", () => {
+    numInput.value = slider.value;
+    updateSimulator();
+  });
+
+  numInput.addEventListener("input", () => {
+    let val = parseFloat(numInput.value);
+    if (!isNaN(val)) {
+      slider.value = Math.min(1, Math.max(0.001, val));
+    }
+    updateSimulator();
+  });
+
+  textInput.addEventListener("input", updateSimulator);
+
+  removeBtn.addEventListener("click", () => {
+    row.remove();
+    updateSimulator();
+  });
+
+  container.appendChild(row);
+}
+
+function updateSimulator() {
+  const container = document.getElementById("sim-rows-container");
+  const outBox = document.getElementById("sim-math-output");
+  if (!container || !outBox) return;
+
+  const rows = [...container.querySelectorAll(".sim-row-item")].map(d => {
+    const textInp = d.querySelector(".sim-tok-input");
+    const probInp = d.querySelector(".sim-prob-input");
+    return {
+      token: (textInp ? textInp.value : "") || "token",
+      p: parseFloat(probInp ? probInp.value : 0.5)
+    };
+  });
+
+  if (rows.length === 0) {
+    outBox.innerHTML = `<p style="color:var(--text-muted); font-size:0.85rem;">No tokens configured. Add a token or click a preset above.</p>`;
+    return;
+  }
+
+  const hasInvalid = rows.some(r => isNaN(r.p) || r.p <= 0 || r.p > 1);
+  if (hasInvalid) {
+    outBox.innerHTML = `<p style="color:#f87171; font-size:0.85rem;">Each probability must be greater than 0 and at most 1.0.</p>`;
+    return;
+  }
+
+  const N = rows.length;
+  let sumLog = 0;
+  let tableRows = "";
+
+  rows.forEach((r, idx) => {
+    const nll = -Math.log(r.p);
+    sumLog += nll;
+    const invP = 1 / r.p;
+    tableRows += `
+      <tr>
+        <td>${idx + 1}</td>
+        <td><span class="tok-badge">${escapeHtml(sanitizeTokenView(r.token))}</span></td>
+        <td><strong>${fmtNum(r.p)}</strong> (${(r.p * 100).toFixed(1)}%)</td>
+        <td>${fmtNum(invP)}</td>
+        <td>${nll.toFixed(3)}</td>
+      </tr>
+    `;
+  });
+
+  const avgNLL = sumLog / N;
+  const ppl = Math.exp(avgNLL);
+  const productInv = Math.exp(sumLog);
+  const shown = rows.slice(0, 6).map(r => fmtNum(1 / r.p)).join(" \\times ") + (N > 6 ? ` \\times \\dots \\text{ (${N - 6} more)}` : "");
+
+  outBox.innerHTML = `
+    <div class="glass-table-wrap" style="margin-bottom:16px;">
+      <table class="glass-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Simulated Token</th>
+            <th>Assigned Probability \\(P_i\\)</th>
+            <th>Surprise (\\(1/P_i\\))</th>
+            <th>Loss (\\(-\\ln P_i\\))</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+
+    <div class="math-breakdown-box">
+      <div class="math-header">
+        <i data-lucide="sigma"></i>
+        <span>Simulated Perplexity Derivation</span>
+      </div>
+
+      <div class="math-step-row">
+        <span class="math-step-tag">Step 1</span>
+        <div class="math-step-content">
+          <strong>Surprise Product</strong> \\(\\prod_{i=1}^N \\frac{1}{P_i} = \\)
+          \\(${shown}\\) = <span class="calc-highlight">${fmtNum(productInv)}</span>
+        </div>
+      </div>
+
+      <div class="math-step-row">
+        <span class="math-step-tag">Step 2</span>
+        <div class="math-step-content">
+          <strong>Token Count</strong> \\(N = \\) <span class="calc-highlight">${N}</span> tokens
+        </div>
+      </div>
+
+      <div class="math-step-row">
+        <span class="math-step-tag">Step 3</span>
+        <div class="math-step-content">
+          <strong>Geometric Mean / Perplexity</strong>
+          \\(\\text{PPL} = \\left(\\prod_{i=1}^N \\frac{1}{P_i}\\right)^{1/N} = \\exp\\left(${avgNLL.toFixed(3)}\\right) = \\)
+          <span class="calc-result">${fmtNum(ppl)}</span>
+        </div>
+      </div>
+
+      <div class="math-note-footer">
+        <i data-lucide="info" style="color:var(--cyan-accent);"></i>
+        <span><strong>Interpretation:</strong> Across this sequence, the model behaves as if it is choosing uniformly among approximately <strong>${fmtNum(ppl)}</strong> equally likely words at each position.</span>
+      </div>
+    </div>
+  `;
+  if (window.lucide) lucide.createIcons({ root: outBox });
+  if (window.renderMathInElement) {
+    renderMathInElement(outBox, {
+      delimiters: [
+        { left: "$$", right: "$$", display: true },
+        { left: "\\(", right: "\\)", display: false }
+      ],
+      throwOnError: false
+    });
+  }
+}
+
+function loadSimPreset(presetStr) {
+  const container = document.getElementById("sim-rows-container");
+  if (!container) return;
+  container.innerHTML = "";
+  presetStr.split(",").forEach(pair => {
+    const parts = pair.split(":");
+    if (parts.length === 2) {
+      addSimTokenRow(parts[0], parseFloat(parts[1]));
+    }
+  });
+  updateSimulator();
+}
+
+// Perplexity Initialization
+function initPerplexityExplorer() {
+  const calcBtn = document.getElementById("ppl-calc-btn");
+  if (calcBtn) {
+    calcBtn.addEventListener("click", runRealModelPerplexity);
+  }
+
+  const inputEl = document.getElementById("ppl-sentence-input");
+  if (inputEl) {
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") runRealModelPerplexity();
+    });
+  }
+
+  // Presets for real model
+  document.querySelectorAll(".ppl-sample").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (inputEl) inputEl.value = btn.dataset.text || btn.textContent;
+      runRealModelPerplexity();
+    });
+  });
+
+  // Simulator Presets
+  document.querySelectorAll(".sim-preset-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.preset) {
+        loadSimPreset(btn.dataset.preset);
+      }
+    });
+  });
+
+  const addTokBtn = document.getElementById("sim-add-token-btn");
+  if (addTokBtn) {
+    addTokBtn.addEventListener("click", () => {
+      addSimTokenRow("word", 0.5);
+      updateSimulator();
+    });
+  }
+
+  const resetSimBtn = document.getElementById("sim-reset-btn");
+  if (resetSimBtn) {
+    resetSimBtn.addEventListener("click", () => {
+      loadSimPreset("I:0.5,love:0.8,Python:0.2");
+    });
+  }
+
+  // Default initial simulator state
+  loadSimPreset("I:0.5,love:0.8,Python:0.2");
+}

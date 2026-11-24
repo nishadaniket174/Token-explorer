@@ -13,6 +13,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Plotly.js for interactive 3D embeddings & latent manifold manifold visualizations -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <!-- KaTeX for crisp mathematical formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -39,6 +43,7 @@
         <button class="nav-tab" data-target="stage-embeddings">Embeddings 3D</button>
         <button class="nav-tab" data-target="stage-attention">Self-Attention</button>
         <button class="nav-tab" data-target="stage-decoder">Decoder</button>
+        <button class="nav-tab" data-target="stage-perplexity">Perplexity</button>
       </nav>
 
       <div class="nav-right">
@@ -144,6 +149,10 @@
               <div class="stage-step" data-step="4">
                 <div class="step-dot"></div>
                 <span>Output</span>
+              </div>
+              <div class="stage-step" data-step="5">
+                <div class="step-dot"></div>
+                <span>Perplexity</span>
               </div>
             </div>
             <div class="canvas-hint">
@@ -512,6 +521,211 @@ Share prices fell sharply.</textarea>
             <!-- Dynamically populated candidate bars -->
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- SECTION 5: PERPLEXITY EXPLORER             -->
+    <!-- ========================================== -->
+    <section class="pipeline-section glass-panel" id="stage-perplexity">
+      <div class="section-header">
+        <div class="stage-tag"><span class="pill-number">05</span> PERPLEXITY EXPLORER</div>
+        <h2>Model Uncertainty &amp; Sequence Perplexity</h2>
+        <p class="section-subtitle">
+          How surprised is an LLM by your text? Connects directly from <strong>Decoder Logits &rarr; Softmax Token Probabilities &rarr; Sequence Perplexity (PPL)</strong> using client-side DistilGPT-2 or interactive simulation.
+        </p>
+      </div>
+
+      <!-- Intuitive Educational Pipeline Bridge Card -->
+      <div class="pipeline-bridge-card">
+        <div class="bridge-flow">
+          <div class="bridge-step">
+            <span class="step-badge">1. Decoder Softmax</span>
+            <div class="step-formula-box">
+              <span class="math-expr">\(P(x_i \mid x_{\lt i})\)</span>
+              <span class="math-fallback" style="display:none;">P(x<sub>i</sub> | x<sub>&lt;i</sub>)</span>
+            </div>
+            <span class="step-detail">Probability distribution over entire vocabulary from causal logits</span>
+          </div>
+          <div class="bridge-arrow"><i data-lucide="arrow-right"></i></div>
+          <div class="bridge-step">
+            <span class="step-badge">2. Actual Token Probability</span>
+            <div class="step-formula-box">
+              <span class="math-expr">\(P_i = P(\text{target}_i)\)</span>
+              <span class="math-fallback" style="display:none;">P<sub>i</sub> = P(target<sub>i</sub>)</span>
+            </div>
+            <span class="step-detail">Exact probability value assigned to the ground-truth token</span>
+          </div>
+          <div class="bridge-arrow"><i data-lucide="arrow-right"></i></div>
+          <div class="bridge-step">
+            <span class="step-badge">3. Surprise &amp; Loss</span>
+            <div class="step-formula-box">
+              <span class="math-expr">\(S_i = \frac{1}{P_i} \;\Longleftrightarrow\; \text{NLL}_i = -\ln(P_i)\)</span>
+              <span class="math-fallback" style="display:none;">Surprise = 1 / P<sub>i</sub> &nbsp;|&nbsp; Loss = -ln(P<sub>i</sub>)</span>
+            </div>
+            <span class="step-detail">Rarer tokens yield higher surprise (1/P<sub>i</sub>) and higher cross-entropy loss</span>
+          </div>
+          <div class="bridge-arrow"><i data-lucide="arrow-right"></i></div>
+          <div class="bridge-step highlight">
+            <span class="step-badge">4. Geometric Mean (PPL)</span>
+            <div class="step-formula-box highlight-math">
+              <span class="math-expr">\(\text{PPL} = \exp\left(-\frac{1}{N}\sum_{i=1}^N \ln P_i\right)\)</span>
+              <span class="math-fallback" style="display:none;">PPL = exp(-1/N &times; &sum; ln P<sub>i</sub>)</span>
+            </div>
+            <span class="step-detail">Equivalent branching factor: effective choices per token</span>
+          </div>
+        </div>
+        <div class="bridge-explainer">
+          <i data-lucide="lightbulb" class="explainer-icon"></i>
+          <div><strong>Intuitive meaning of Perplexity:</strong> A perplexity of <strong>\(K\)</strong> means the language model was, on average across the entire text, as uncertain as if it were choosing uniformly among <strong>\(K\) equally likely words</strong> at each position. Lower perplexity means higher model confidence and natural flow.</div>
+        </div>
+      </div>
+
+      <!-- Real Model Calculator Block -->
+      <div class="glass-card card-inner perplexity-card">
+        <div class="card-title-bar">
+          <div class="title-with-icon">
+            <i data-lucide="brain-circuit"></i>
+            <span>Real Model Evaluation: Pretrained DistilGPT-2 (ONNX Client-Side)</span>
+          </div>
+          <div class="model-badge-status" id="ppl-model-badge">
+            <span class="status-indicator-dot idle"></span>
+            <span id="ppl-model-status-text">Client-Side Ready (Loads on demand)</span>
+          </div>
+        </div>
+
+        <p class="model-desc-note">
+          <i data-lucide="info"></i> The causal language model evaluates each token \(x_i\) strictly using preceding context \([x_1, \dots, x_{i-1}]\). Beginning of sequence is anchored with the standard GPT-2 <code>&lt;|endoftext|&gt;</code> token.
+        </p>
+
+        <label class="field-label" for="ppl-sentence-input">Input text to evaluate:</label>
+        <div class="input-with-button">
+          <input type="text" id="ppl-sentence-input" class="glass-input" value="I love Python">
+          <button id="ppl-calc-btn" class="btn btn-action glass-glow">
+            <i data-lucide="calculator"></i>
+            <span>Calculate Perplexity</span>
+          </button>
+        </div>
+
+        <!-- Presets -->
+        <div class="presets-row">
+          <span class="preset-label">Test comparisons:</span>
+          <button class="preset-chip ppl-sample" data-text="I love Python">I love Python</button>
+          <button class="preset-chip ppl-sample" data-text="Python love I">Python love I</button>
+          <button class="preset-chip ppl-sample" data-text="The capital of France is Paris">The capital of France is Paris</button>
+          <button class="preset-chip ppl-sample" data-text="The capital of France is banana">The capital of France is banana</button>
+        </div>
+
+        <!-- Status & Progress bar -->
+        <div id="ppl-status-box" class="ppl-status-container">
+          <div class="status-text" id="ppl-status">Click "Calculate Perplexity" to evaluate with DistilGPT-2. (Model weights ~80MB download once and cache in browser).</div>
+          <div class="progress-track" id="ppl-progress-track" style="display:none;">
+            <div class="progress-fill" id="ppl-progress-fill"></div>
+          </div>
+        </div>
+
+        <!-- Real Results Section -->
+        <div id="ppl-real-results" class="ppl-results-area" style="display:none;">
+          <!-- Metric Highlights Grid -->
+          <div class="ppl-metrics-grid">
+            <div class="metric-card">
+              <span class="metric-num-title">Perplexity (PPL)</span>
+              <span class="metric-huge-val" id="ppl-metric-val">--</span>
+              <span class="metric-sub" id="ppl-metric-interpretation">--</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-num-title">Tokens Evaluated (N)</span>
+              <span class="metric-huge-val cyan" id="ppl-token-count">0</span>
+              <span class="metric-sub">Causal prefix steps</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-num-title">Avg Cross-Entropy (NLL)</span>
+              <span class="metric-huge-val purple" id="ppl-avg-loss">--</span>
+              <span class="metric-sub">nats / token (\(-\frac{1}{N}\sum\ln P_i\))</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-num-title">Geometric Mean P</span>
+              <span class="metric-huge-val emerald" id="ppl-geom-p">--</span>
+              <span class="metric-sub">Average per-token confidence</span>
+            </div>
+          </div>
+
+          <!-- Token Probability Visualizer & Interactive Chips -->
+          <div class="token-ppl-inspect-section">
+            <h4><i data-lucide="list"></i> Token Probability Breakdown &amp; Surprise Spectrum</h4>
+            <p class="section-subtext">Hover over any token to inspect its preceding context, assigned probability \(P\), and negative log probability \(-\ln(P)\).</p>
+            <div id="ppl-token-chips" class="ppl-chips-list"></div>
+            
+            <!-- Table View -->
+            <div class="table-box glass-table-wrap">
+              <table class="glass-table" id="ppl-tokens-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Token</th>
+                    <th>Token ID</th>
+                    <th>Probability \(P_i\)</th>
+                    <th>Surprise (\(1/P_i\))</th>
+                    <th>Loss (\(-\ln P_i\))</th>
+                    <th style="min-width: 140px;">Confidence Meter</th>
+                  </tr>
+                </thead>
+                <tbody id="ppl-tokens-tbody"></tbody>
+              </table>
+            </div>
+
+            <!-- Mathematical Step-by-Step Box -->
+            <div id="ppl-math-breakdown" class="math-breakdown-box"></div>
+          </div>
+
+          <!-- Next-Token Prediction Top 8 -->
+          <div class="next-token-prediction-card">
+            <div class="next-token-header">
+              <div class="title-with-icon">
+                <i data-lucide="sparkles"></i>
+                <span>Top 8 Predicted Next Tokens for this Context</span>
+              </div>
+              <span class="badge-sub">Output from Final Causal Logit</span>
+            </div>
+            <div id="ppl-next-tokens-list" class="next-tokens-grid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Probability Simulator (Try it by hand) -->
+      <div class="glass-card card-inner simulator-card">
+        <div class="card-title-bar">
+          <div class="title-with-icon">
+            <i data-lucide="sliders"></i>
+            <span>Interactive Probability Simulator</span>
+          </div>
+          <span class="sim-mode-tag">Simulated Sandbox (No Model Required)</span>
+        </div>
+
+        <p class="sim-explainer">
+          Experiment with custom tokens and hypothetical probabilities to intuitively understand how individual surprising or confident words affect sequence perplexity.
+        </p>
+
+        <!-- Presets Row -->
+        <div class="sim-presets-row">
+          <span class="preset-label">Simulation Presets:</span>
+          <button class="preset-chip sim-preset-btn" data-preset="I:0.5,love:0.8,Python:0.2">Natural Sentence (0.5, 0.8, 0.2)</button>
+          <button class="preset-chip sim-preset-btn" data-preset="w1:0.125,w2:0.125,w3:0.125,w4:0.125,w5:0.125,w6:0.125,w7:0.125,w8:0.125">Uniform 1/8 (PPL = exactly 8.0)</button>
+          <button class="preset-chip sim-preset-btn" data-preset="The:0.95,cat:0.92,sat:0.88,quietly:0.005">One Highly Surprising Token (0.005)</button>
+          <button class="preset-chip sim-preset-btn" data-preset="Tokyo:0.92,is:0.96,the:0.94,capital:0.98,of:0.99,Japan:0.95">High Confidence Fact</button>
+        </div>
+
+        <div id="sim-rows-container" class="sim-rows-list"></div>
+
+        <div class="sim-actions-row">
+          <button id="sim-add-token-btn" class="btn btn-secondary glass-btn">
+            <i data-lucide="plus-circle"></i>
+            <span>Add Token</span>
+          </button>
+          <button id="sim-reset-btn" class="btn-ghost-sm">Reset</button>
+        </div>
+
+        <div id="sim-math-output" class="sim-output-box"></div>
       </div>
     </section>
 
